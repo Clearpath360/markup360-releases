@@ -1,0 +1,36 @@
+# Turns files pushed into incoming/ into a GitHub release that the Markup360 desktop app picks up.
+# incoming/EXT_Markup360_vNN.html            -> page update
+# incoming/INT_Markup360_Setup_vNN.exe.partK -> joined into INT_Markup360_Setup_vNN.exe (full app update)
+name: publish
+on:
+  push:
+    paths: ['incoming/**']
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build assets
+        id: a
+        run: |
+          set -e
+          if [ ! -d incoming ] || [ -z "$(ls incoming)" ]; then echo "v=" >> $GITHUB_OUTPUT; exit 0; fi
+          mkdir out
+          V=$(ls incoming | grep -oE 'v[0-9]+' | sort -V | tail -1)
+          echo "v=$V" >> $GITHUB_OUTPUT
+          [ -f incoming/EXT_Markup360_$V.html ] && cp incoming/EXT_Markup360_$V.html out/
+          if ls incoming/INT_Markup360_Setup_$V.exe.part* >/dev/null 2>&1; then
+            cat $(ls incoming/INT_Markup360_Setup_$V.exe.part* | sort -V) > out/INT_Markup360_Setup_$V.exe
+          fi
+          ls -la out
+      - name: Release
+        if: steps.a.outputs.v != ''
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: gh release create ${{ steps.a.outputs.v }} out/* --title "Markup360 ${{ steps.a.outputs.v }}" --notes "Markup360 ${{ steps.a.outputs.v }}" --latest
+      - name: Clear incoming
+        if: steps.a.outputs.v != ''
+        run: |
+          git config user.name github-actions; git config user.email github-actions@users.noreply.github.com
+          git rm -rq incoming && git commit -m "Published ${{ steps.a.outputs.v }}" && git push
